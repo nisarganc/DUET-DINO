@@ -2,13 +2,13 @@
 
 # DUET-DINO: Simultaneous Cross-View World Modeling for Latent Planning in Robot Manipulation
 
-**Nisarga Nilavadi**<sup>1</sup> ·
-**Ralf Römer**<sup>2</sup> ·
-**Moritz Reuss**<sup>3,4</sup> ·
-**Michael Krawez**<sup>1</sup> ·
-**Tobias Jülg**<sup>1</sup> ·
-**Angela P. Schoellig**<sup>2,5</sup> ·
-**Rudolf Lioutikov**<sup>3,5</sup> ·
+**Nisarga Nilavadi**<sup>1</sup>&nbsp;&nbsp;
+**Ralf Römer**<sup>2</sup>&nbsp;&nbsp;
+**Moritz Reuss**<sup>3,4</sup>&nbsp;&nbsp; 
+**Michael Krawez**<sup>1</sup>&nbsp;&nbsp;
+**Tobias Jülg**<sup>1</sup><br>
+**Angela P. Schoellig**<sup>2,5</sup>&nbsp;&nbsp;
+**Rudolf Lioutikov**<sup>3,5</sup>&nbsp;&nbsp; 
 **Wolfram Burgard**<sup>1,5</sup>
 
 <sup>1</sup> University of Technology Nuremberg &nbsp;&nbsp;
