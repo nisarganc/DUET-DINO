@@ -1,0 +1,107 @@
+# train type
+train: predictor
+# output folder
+folder: .cache/duet_dinov3/
+
+# DATA
+data:
+  # baseline: 256
+  batch_size: 64
+  camera_views:
+  - right_mp4_path
+  - wrist_mp4_path
+  include_roboarena: true
+  crop_size: 224
+  datasets:
+    - /tmp/droid_raw/clean_data_wright
+    - /tmp/roboarena/clean_data_wright
+  dataset_fpcs: # max_num_frames
+  - 8
+  fps: 4
+  num_workers: 8
+  prefetch_factor: 2
+  patch_size: 16
+  pin_mem: true
+  persistent_workers: true
+  stereo_view: false
+  tubelet_size: 2
+data_aug:
+  auto_augment: false
+  horizontal_flip: false
+  motion_shift: false
+  random_resize_aspect_ratio:
+  - 0.75
+  - 1.35
+  random_resize_scale:
+  - 1.777
+  - 1.777
+  reprob: 0.0
+
+# TRAINING
+loss:
+  auto_steps: 2
+  loss_exp: 1.0
+  normalize_reps: true
+  reg_coeff: 0.0
+  # to train
+  train_test_split: false
+  use_closs: false
+  closs_coeff: 0.2
+  closs_chosen: 0.1
+  # eval
+  closs_keys: 
+  - -1.0
+  # - 0.0
+  # - 0.1
+  # - 0.2
+  closs_maxnorm: 0.075
+  # closs_rot_std: 0.104
+  # closs_rot_clip: 3.14
+  # closs_gripper_clip: 1.0
+
+meta:
+  dtype: bfloat16
+  eval_freq: 100
+  # $folder/latest.pt
+  resume_checkpoint: null 
+  pretrain_checkpoint: .cache/encoder_checkpoints/vitg.pt 
+  pretrain_dinocheckpoint: .cache/encoder_checkpoints/dinov3_vith16plus_pretrain_lvd1689m-7c1da9a5.pth
+  context_encoder_key: target_encoder
+  save_every_freq: 25
+  seed: 239
+  use_sdpa: true
+
+# MODEL
+model:
+  model_name: vit_giant_xformers
+  use_dinov3_encoder: true
+  dinov3_model_name: dinov3_vith16plus
+  dual_view_training: true # make sure to set 2 camera views
+  pred_depth: 24
+  pred_embed_dim: 1024
+  pred_is_frame_causal: true
+  pred_num_heads: 16
+  cross_attn_num_heads: 16
+  uniform_power: true
+  use_activation_checkpointing: true
+  use_extrinsics: false
+  camera_frame: false
+  use_rope: true
+optimization:
+  anneal: 15
+  epochs: 315
+  final_lr: 0.0
+  final_weight_decay: 0.04
+  ipe: 300
+  lr: 0.000425
+  start_lr: 0.000075
+  warmup: 15
+  weight_decay: 0.04
+
+# LOGGING
+wandb:
+  project: duet-dino
+  entity: computer-science-and-artificial-intelligence
+  name: duet_dinov3
+  tags: dinov3_training
+  enabled: true

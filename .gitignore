@@ -1,0 +1,6 @@
+*.pyc
+.duet-dino/
+
+wandb/
+checkpoints/
+configs/inference_experiments/
