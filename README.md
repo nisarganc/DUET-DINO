@@ -18,8 +18,6 @@
 <sup>5</sup> Robotics Institute Germany
 
 
-
-
 </div>
 
 ## Installation
@@ -46,6 +44,11 @@ Install dependencies in the activated environment:
 ```bash
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+```
+
+or use Docker Image:
+```bash
+docker build -t duet-dino:<image_tag> -f Dockerfile .
 ```
 
 ## Download checkpoints

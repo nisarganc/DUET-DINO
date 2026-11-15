@@ -37,11 +37,7 @@ WORKDIR /workspace/duet-dino
 COPY . .
 
 # Install requirements if your project has requirements.txt
-RUN if [ -f requirements.txt ]; then \
-        python -m pip install -r requirements.txt; \
-    fi \
-    && python -m pip install --upgrade pip setuptools wheel \
-    && python -m pip install -e . \
+RUN python -m pip install --no-cache-dir -r requirements.txt \
     && python -m pip check
 
 RUN echo ". /opt/conda/etc/profile.d/conda.sh && conda activate ${CONDA_ENV}" \
