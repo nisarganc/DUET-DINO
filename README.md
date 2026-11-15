@@ -142,5 +142,8 @@ for releasing their code. Please also cite the relevant source papers:
 
 ## License
 
-DUET-DINO's original code and the V-JEPA-derived code are licensed under [MIT](LICENSE). The files in `src_dino/` retain the
-[DINOv3 License](licenses/DINOv3.txt), and `randaugment.py` and `randerase.py` in `train/video_datasets_utils/` retain [Apache 2.0](licenses/Apache-2.0.txt). See [LICENSE](LICENSE) for the licensing scope and source headers for attribution.
+See [LICENSE](LICENSE) for the licensing scope and source headers for attribution.
+
+- DUET-DINO's original code and the V-JEPA-derived code are licensed under [MIT](LICENSE).
+- The files in `src_dino/` retain the [DINOv3 License](licenses/DINOv3.txt).
+- The files `randaugment.py` and `randerase.py` in `train/video_datasets_utils/` retain [Apache 2.0](licenses/Apache-2.0.txt).
