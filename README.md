@@ -126,9 +126,9 @@ Our code builds on [V-JEPA 2 / V-JEPA 2.1](https://github.com/facebookresearch/v
 and [DINOv3](https://github.com/facebookresearch/dinov3). We thank their authors
 for releasing their code. Please also cite the relevant source papers:
 
-- Assran et al., [V-JEPA 2: Self-Supervised Video Models Enable Understanding, Prediction and Planning](https://arxiv.org/abs/2506.09985), 2025.
-- Mur-Labadia et al., [V-JEPA 2.1: Unlocking Dense Features in Video Self-Supervised Learning](https://arxiv.org/abs/2603.14482), 2026.
-- Siméoni et al., [DINOv3](https://arxiv.org/abs/2508.10104), 2025.
+- [Assran et al.](https://arxiv.org/abs/2506.09985), V-JEPA 2: Self-Supervised Video Models Enable Understanding, Prediction and Planning, 2025.
+- [Mur-Labadia et al.](https://arxiv.org/abs/2603.14482), V-JEPA 2.1: Unlocking Dense Features in Video Self-Supervised Learning, 2026.
+- [Siméoni et al.](https://arxiv.org/abs/2508.10104), DINOv3, 2025.
 
 ## License
 
