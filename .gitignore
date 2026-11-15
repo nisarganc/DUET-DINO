@@ -3,4 +3,5 @@
 
 wandb/
 checkpoints/*
+output/*
 configs/inference/
