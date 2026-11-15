@@ -32,7 +32,7 @@ RUN conda create -n "${CONDA_ENV}" "python=${PYTHON_VERSION}" pip -y \
 ENV CONDA_DEFAULT_ENV=${CONDA_ENV}
 ENV PATH=/opt/conda/envs/${CONDA_ENV}/bin:/opt/conda/bin:${PATH}
 
-WORKDIR /workspace/DUET-DINO
+WORKDIR /workspace/duet-dino
 
 COPY . .
 
