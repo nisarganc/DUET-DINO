@@ -18,8 +18,6 @@
 <sup>5</sup> Robotics Institute Germany
 
 
-
-
 </div>
 
 ## Installation
