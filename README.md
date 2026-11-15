@@ -65,6 +65,18 @@ Download the trained DUET-DINO predictor:
 wget https://huggingface.co/UTN-AIR/DUET-DINO/resolve/main/duet-dino.pt -O checkpoints/duet-dino.pt
 ```
 
+## Docker Setup
+
+Install Docker and the NVIDIA Container Toolkit, then build and run from the repository root:
+
+```bash
+docker build -t duet-dino:latest -f Dockerfile .
+./run_docker.sh
+```
+
+The script opens a Bash shell with all GPUs, mounts the repository and local
+`checkpoints/` and `output/` directories, and exposes port `8000`.
+Run `./run_docker.sh --help` for configuration options.
 
 ## Start the policy server
 

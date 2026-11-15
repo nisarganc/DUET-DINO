@@ -1,0 +1,13 @@
+# Version control
+.git/
+
+# Local Python environments and caches
+.duet-dino/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Checkpoints and runtime outputs (mounted at runtime)
+checkpoints/
+output/
+wandb/

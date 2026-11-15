@@ -4,4 +4,3 @@
 wandb/
 checkpoints/*
 configs/inference/
-run_docker.sh
