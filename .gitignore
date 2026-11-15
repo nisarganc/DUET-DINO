@@ -2,5 +2,6 @@
 .duet-dino/
 
 wandb/
-checkpoints/
-configs/inference_experiments/
+checkpoints/*
+configs/inference/
+run_docker.sh
