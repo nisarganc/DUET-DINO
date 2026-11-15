@@ -1,11 +1,12 @@
 DUET-DINO is licensed under MIT, as set out below, except for the third-party
 files identified here, which retain their respective licenses. V-JEPA 2 and
-V-JEPA 2.1 source code retains the MIT license (licenses/MIT-VJEPA.txt), except
-for randaugment.py and randerase.py in train/video_datasets_utils/, which retain
-Apache 2.0 (licenses/Apache-2.0.txt). Files in src_dino/, including adaptations,
-retain the DINOv3 License(licenses/DINOv3.txt). Original copyright and
-attribution notices are retained in the source files. This MIT grant does not
-override those third-party licenses.
+V-JEPA 2.1 source code and adaptations retain the MIT license
+(licenses/MIT-VJEPA.txt). The files randaugment.py and randerase.py in
+train/video_datasets_utils retain Apache 2.0 (licenses/Apache-2.0.txt).
+DINOv3 source code and adaptations retain the DINOv3 License
+(licenses/DINOv3.txt). Original copyright and attribution notices are retained
+in the source files. This MIT grant does not override those third-party
+licenses.
 
 MIT License
 
