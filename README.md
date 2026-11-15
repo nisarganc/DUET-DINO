@@ -78,17 +78,7 @@ Run `./run_docker.sh --help` for configuration options.
 
 ## Start the policy server
 
-In [the DINOv3 dual-view inference config](configs/inference/angledreach/droid-224px-8f-duet.yaml),
-set these checkpoint fields to paths relative to the repository root:
-
-```yaml
-meta:
-  pretrain_dinocheckpoint: checkpoints/dinov3_vith16plus_pretrain_lvd1689m-7c1da9a5.pth
-model:
-  predictor_checkpoint: checkpoints/duet-dino.pt
-```
-
-Select the config file and start the TCP policy server:
+Select the [config file](configs/inference), verify the checkpoint fields, and start the TCP policy server:
 
 ```bash
 python -m inference.serve_policy \
