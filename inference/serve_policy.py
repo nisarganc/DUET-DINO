@@ -341,29 +341,27 @@ class DUETDINOPolicy:
                 self._prediction_log[env_id].append({
                     "env_id": env_id,
                     "step_count": self.step_count[env_id],
-                    "action": actions.detach().cpu().clone(),
+                    "actions": actions.detach().cpu().clone(),
                     "predictions": predictions,
                 })
 
-            action = actions[0].detach().cpu().numpy().astype(np.float32)
+            all_actions = actions.detach().cpu().numpy().astype(np.float32)
             self._env_prev_action[env_id] = actions[1:] if actions.shape[0] > 1 else None
             
 
             self.step_count[env_id] += 1
 
-        viz = np.concatenate(
-            [
-                curr_obs["external_image"].cpu().numpy(),
-                curr_obs["wrist_image"].cpu().numpy(),
-            ],
-            axis=1,
-        )
-
-        return_action = action.copy()
+        return_action = all_actions[0].copy()
         # isaac expects:  angle-axis / rotvec
-        return_action[3:6] = Rotation.from_euler("xyz", action[3:6], degrees=False).as_rotvec()
+        return_action[3:6] = Rotation.from_euler("xyz", all_actions[0][3:6], degrees=False).as_rotvec()
         # print("Return Action:", return_action, flush=True)
-        return {"action": return_action, "viz": viz}
+
+        return_actions = all_actions.copy()
+        # isaac expects:  angle-axis / rotvec
+        return_actions[:, 3:6] = Rotation.from_euler("xyz", all_actions[:, 3:6], degrees=False).as_rotvec()
+        # print("All Actions:", actions, flush=True)
+
+        return {"action": return_action, "actions": return_actions}
 
     def serve_forever(self) -> None:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_sock:
