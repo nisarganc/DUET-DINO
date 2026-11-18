@@ -68,6 +68,7 @@ class DUETDINOPolicy:
         self._env_goal_rep: dict[int, object] = {}
         self._env_goal_rep_wrist: dict[int, object] = {}
         self._env_generators: dict[int, object] = {}
+        self._env_run_idx: dict[int, int] = {}
 
         self._initialize_model()
 
@@ -90,7 +91,7 @@ class DUETDINOPolicy:
 
         self.device = self.cfg.get("device", "cuda:0")
 
-        camera_views = cfgs_data.get("camera_views", ["left_mp4_path"])
+        camera_views = cfgs_data.get("camera_views", ["right_mp4_path"])
         crop_size = cfgs_data.get("crop_size", 256)
         patch_size = cfgs_data.get("patch_size")
         tubelet_size = cfgs_data.get("tubelet_size")
@@ -232,15 +233,41 @@ class DUETDINOPolicy:
             device=self.device,
             transform=transform,
         )
+        self.step_count: dict[int, int] = {}
         self.logname = cfgs_log_args.get("modelname")
-        self.step_count = 0
 
-    def reset(self):
-        self._env_prev_action.clear()
-        self._env_goal_rep.clear()
-        self._env_goal_rep_wrist.clear()
-        self._env_generators.clear()
-        self.step_count = 0
+        self.log_predictions =  bool(cfgs_log_args.get("log_predictions", False))
+        if self.log_predictions:
+            self.output_dir = Path(cfgs_log_args.get("output_dir", "output")).expanduser()
+            self.output_dir = REPO_ROOT / self.output_dir / self.logname
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            self._prediction_log: dict[int, list[dict]] = {}
+
+    def _save_predictions(self, env_id: int = 0) -> None:
+        import torch
+        run_idx = self._env_run_idx[env_id]
+        path = self.output_dir / f"predictions_run{run_idx}_env{env_id}.pt"
+        pending_path = path.with_suffix(".pt.tmp")
+        try:
+            torch.save({
+                "predictions_log": self._prediction_log[env_id],
+            }, pending_path)
+            pending_path.replace(path)
+        finally:
+            pending_path.unlink(missing_ok=True)
+        print(f"[DUET-DINO server] Saved predictions to {path}", flush=True)
+        del self._prediction_log[env_id]
+
+    # Call at the end of each run to clear state and save predictions.
+    def reset(self, env_id: int = 0) -> None:
+        if self.log_predictions and env_id in self._prediction_log:
+            self._save_predictions(env_id)
+        self._env_prev_action.pop(env_id, None)
+        self._env_goal_rep.pop(env_id, None)
+        self._env_goal_rep_wrist.pop(env_id, None)
+        self._env_generators.pop(env_id, None)
+        self._env_run_idx.pop(env_id, None)
+        self.step_count.pop(env_id, None)
 
     def set_goal_images(
         self,
@@ -255,21 +282,23 @@ class DUETDINOPolicy:
 
         goal_rep = self.world_model.encode(external_image)
         goal_rep_wrist = self.world_model.encode(wrist_image)
+
         self._env_goal_rep[env_id] = goal_rep
         self._env_goal_rep_wrist[env_id] = goal_rep_wrist
-        run_seed = self.base_seed + (0 if run_idx is None else int(run_idx) * 1_000_003) + env_id
+
         generator = torch.Generator(device=self.device)
-        generator.manual_seed(run_seed)
+        generator.manual_seed(self.base_seed + int(run_idx) * 1_000_003 + env_id)
         self._env_generators[env_id] = generator
-        if run_idx is None:
-            exp_name = f"{self.logname}_{instruction}_{env_id}"
-        else:
-            exp_name = f"{self.logname}_{instruction}_run{run_idx}_env{env_id}"
+        self._env_run_idx[env_id] = int(run_idx)
         self.world_model.reset_logs(
             goal_rep=goal_rep,
             goal_rep_wrist=goal_rep_wrist,
-            exp_name=exp_name,
         )
+
+        if env_id not in self.step_count:
+            self.step_count[env_id] = 0
+        if self.log_predictions and env_id not in self._prediction_log:
+            self._prediction_log[env_id] = []
 
     def infer(self, obs: dict, instruction: str, *, env_id: int = 0) -> dict:
         import torch
@@ -294,7 +323,7 @@ class DUETDINOPolicy:
             )
 
             # print("EE Pose:", pose[0].cpu().numpy(), flush=True)
-            # print(f"[DUET-DINO server] action step={self.step_count}", flush=True)
+            # print(f"[DUET-DINO server] action step={self.step_count[env_id]}", flush=True)
 
             actions = self.world_model.infer_next_action(
                 pose=pose,
@@ -304,13 +333,23 @@ class DUETDINOPolicy:
                 generator=self._env_generators.get(env_id),
                 goal_rep=self._env_goal_rep[env_id],
                 goal_rep_wrist=self._env_goal_rep_wrist[env_id],
+                return_predictions=self.log_predictions,
             )
+
+            if self.log_predictions:
+                actions, predictions = actions
+                self._prediction_log[env_id].append({
+                    "env_id": env_id,
+                    "step_count": self.step_count[env_id],
+                    "action": actions.detach().cpu().clone(),
+                    "predictions": predictions,
+                })
 
             action = actions[0].detach().cpu().numpy().astype(np.float32)
             self._env_prev_action[env_id] = actions[1:] if actions.shape[0] > 1 else None
             
 
-            self.step_count += 1
+            self.step_count[env_id] += 1
 
         viz = np.concatenate(
             [
@@ -366,7 +405,7 @@ class DUETDINOPolicy:
             return {"ok": True}
 
         if method == "reset":
-            self.reset()
+            self.reset(env_id=int(request.get("env_id", 0)))
             return {"ok": True}
 
         if method == "infer":

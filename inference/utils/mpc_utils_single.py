@@ -148,7 +148,6 @@ def poses_to_diff(start, end):
     return torch.from_numpy(action)
 
 def cem(
-    context_obs,
     context_frame,
     context_pose,
     goal_frame,
@@ -332,13 +331,6 @@ def cem(
     # ---------------------------------------------------------
     # Expand MPC inputs over candidate samples.
     # ---------------------------------------------------------
-
-    context_obs = context_obs.repeat(
-        samples,
-        1,
-        1,
-        1,
-    )
 
     context_frame = context_frame.repeat(
         samples,

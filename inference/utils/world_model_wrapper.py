@@ -26,6 +26,7 @@ class WorldModel(object):
             "rollout": 2,
             "samples": 400,
             "topk": 10,
+            "elite_temperature": 0.25,
             "cem_steps": 10,
             "momentum_mean": 0.15,
             "momentum_mean_rot": 0.25,
@@ -57,7 +58,9 @@ class WorldModel(object):
         self.goal_rep = None
         self.goal_rep_wrist = None
 
-    def reset_logs(self, goal_rep=None, goal_rep_wrist=None, exp_name='rand_exp'):
+    def reset_logs(self, 
+                    goal_rep=None, 
+                    goal_rep_wrist=None):
         self.goal_rep = goal_rep
         self.goal_rep_wrist = goal_rep_wrist
 
@@ -65,10 +68,18 @@ class WorldModel(object):
     def encode(self, clip):
         
         # [3, 720, 1280]  -> [1, 720, 1280, 3] 
-        if clip.shape[0] == 3:
+        if clip.dim() == 3 and clip.shape[0] == 3:
             clip = torch.permute(clip, (1, 2, 0)).unsqueeze(0)
-        else:
+        elif clip.dim() == 3 and clip.shape[2] == 3:
             clip = clip.unsqueeze(0)
+        elif clip.dim() == 4 and clip.shape[1] == 3:
+            clip = torch.permute(clip, (0, 2, 3, 1))
+        elif clip.dim() == 4 and clip.shape[3] == 3:
+            pass
+        else:
+            raise ValueError(f"Unexpected clip shape: {clip.shape}")
+
+
 
         # [1, 720, 1280, 3] -> [1, 1, 720, 1408, 3]
         # [1, 3, 1, 256, 1408] i.e, [B, C, T, Patches, dim]
@@ -108,6 +119,7 @@ class WorldModel(object):
                           *,
                           goal_rep=None,
                           goal_rep_wrist=None,
+                          return_predictions=False,
                           ):
 
         # Request-specific goals keep interleaved environments independent.
@@ -123,32 +135,32 @@ class WorldModel(object):
                 if self.inferred_mode == "duet":
                     model = self.predictor["duet"]
 
-                    B, T, N_T, D = reps["left"].size()
+                    B, T, N_T, D = reps["side"].size()
 
-                    left_next, wrist_next = model(
-                        reps["left"].flatten(1, 2),
+                    side_next, wrist_next = model(
+                        reps["side"].flatten(1, 2),
                         reps["wrist"].flatten(1, 2),
                         actions,
                         poses,
                     )
-                    left_next = left_next[:, -self.tokens_per_frame :]
+                    side_next = side_next[:, -self.tokens_per_frame :]
                     wrist_next = wrist_next[:, -self.tokens_per_frame :]
 
                     if self.normalize_reps:
-                        left_next = F.layer_norm(left_next, (left_next.size(-1),))
+                        side_next = F.layer_norm(side_next, (side_next.size(-1),))
                         wrist_next = F.layer_norm(wrist_next, (wrist_next.size(-1),))
 
                     next_rep = {
-                        "left": left_next.view(B, 1, N_T, D),
+                        "side": side_next.view(B, 1, N_T, D),
                         "wrist": wrist_next.view(B, 1, N_T, D),
                     }
 
                 elif self.inferred_mode == "independent_dual":
                     side_model = self.predictor['side']
                     wrist_model = self.predictor['wrist']
-                    B, T, N_T, D = reps["left"].size()
-                    left_next = side_model(
-                        reps["left"].flatten(1, 2),
+                    B, T, N_T, D = reps["side"].size()
+                    side_next = side_model(
+                        reps["side"].flatten(1, 2),
                         actions,
                         poses,
                     )[:, -self.tokens_per_frame :]
@@ -159,11 +171,11 @@ class WorldModel(object):
                     )[:, -self.tokens_per_frame :]
 
                     if self.normalize_reps:
-                        left_next = F.layer_norm(left_next, (left_next.size(-1),))
+                        side_next = F.layer_norm(side_next, (side_next.size(-1),))
                         wrist_next = F.layer_norm(wrist_next, (wrist_next.size(-1),))
 
                     next_rep = {
-                        "left": left_next.view(B, 1, N_T, D),
+                        "side": side_next.view(B, 1, N_T, D),
                         "wrist": wrist_next.view(B, 1, N_T, D),
                     }
 
@@ -194,8 +206,7 @@ class WorldModel(object):
             wrist_rep = self.encode(obs_wrist)
             
             mpc_action = cem_dual( 
-                context_obs={"left": obs, "wrist": obs_wrist},
-                context_frame={"left": rep,"wrist": wrist_rep},
+                context_frame={"side": rep,"wrist": wrist_rep},
                 context_pose=pose,
                 goal_frame_side=goal_rep,
                 goal_frame_wrist=goal_rep_wrist,
@@ -209,7 +220,6 @@ class WorldModel(object):
             rep = self.encode(obs)
             wrist_rep = self.encode(obs_wrist)
             mpc_action = cem_single( 
-                context_obs=obs if self.inferred_mode == "side" else obs_wrist,
                 context_frame=rep if self.inferred_mode == "side" else wrist_rep,
                 context_pose=pose,
                 goal_frame=goal_rep if self.inferred_mode == "side" else goal_rep_wrist,
@@ -219,4 +229,32 @@ class WorldModel(object):
                 **self.mpc_args,
             )
 
-        return mpc_action
+        if not return_predictions:
+            return mpc_action
+
+        dual_view = self.inferred_mode in ("independent_dual", "duet")
+        frames = {
+            "side": rep.unsqueeze(1),
+            "wrist": wrist_rep.unsqueeze(1),
+        } if dual_view else (
+            rep if self.inferred_mode == "side" else wrist_rep
+        ).unsqueeze(1)
+
+        poses = pose.unsqueeze(1)
+
+        with torch.no_grad():
+            for h in range(mpc_action.size(0)):
+                next_frames, next_pose = step_predictor(
+                    frames, mpc_action[None, :h + 1], poses
+                )
+                if dual_view:
+                    for view in frames:
+                        frames[view] = torch.cat([frames[view], next_frames[view]], dim=1)
+                else:
+                    frames = torch.cat([frames, next_frames], dim=1)
+                poses = torch.cat([poses, next_pose], dim=1)
+
+        frames = frames if dual_view else {self.inferred_mode: frames}
+        return mpc_action, {
+            view: rollout[:, 1:].squeeze(0).detach().cpu() for view, rollout in frames.items()
+        }

@@ -148,7 +148,6 @@ def poses_to_diff(start, end):
     return torch.from_numpy(action)
 
 def cem(
-    context_obs,
     context_frame,
     context_pose,
     goal_frame_side,
@@ -178,7 +177,7 @@ def cem(
     def sample_action_traj():
         """Sample several action trajectories."""
         action_traj = None
-        frame_traj_side = context_frame["left"]
+        frame_traj_side = context_frame["side"]
         frame_traj_wrist = context_frame["wrist"]
         pose_traj = context_pose
 
@@ -219,14 +218,14 @@ def cem(
 
             next_frame, next_pose = world_model(
                 {
-                    "left": frame_traj_side,
+                    "side": frame_traj_side,
                     "wrist": frame_traj_wrist,
                 },
                 action_traj,
                 pose_traj,
             )
 
-            next_frame_side = next_frame["left"]
+            next_frame_side = next_frame["side"]
             next_frame_wrist = next_frame["wrist"]
 
             frame_traj_side = torch.cat(
@@ -256,7 +255,7 @@ def cem(
         """Roll out the world model for the planning with zero actions."""
 
         action_traj = None
-        frame_traj_side = reference_context_frame["left"].unsqueeze(0)
+        frame_traj_side = reference_context_frame["side"].unsqueeze(0)
         frame_traj_wrist = reference_context_frame["wrist"].unsqueeze(0)
         pose_traj = reference_context_pose.unsqueeze(0)
 
@@ -279,14 +278,14 @@ def cem(
 
             next_frame, next_pose = world_model(
                 {
-                    "left": frame_traj_side,
+                    "side": frame_traj_side,
                     "wrist": frame_traj_wrist,
                 },
                 action_traj,
                 pose_traj,
             )
 
-            next_frame_side = next_frame["left"]
+            next_frame_side = next_frame["side"]
             next_frame_wrist = next_frame["wrist"]
 
             frame_traj_side = torch.cat(
@@ -376,14 +375,7 @@ def cem(
     # Expand MPC inputs over candidate samples.
     # ---------------------------------------------------------
 
-    context_obs_side = context_obs["left"].repeat(
-        samples,
-        1,
-        1,
-        1,
-    )
-
-    context_frame_side = context_frame["left"].repeat(
+    context_frame_side = context_frame["side"].repeat(
         samples,
         1,
         1,
@@ -391,13 +383,6 @@ def cem(
     )
 
     goal_frame_side = goal_frame_side.repeat(
-        samples,
-        1,
-        1,
-        1,
-    )
-
-    context_obs_wrist = context_obs["wrist"].repeat(
         samples,
         1,
         1,
@@ -418,13 +403,8 @@ def cem(
         1,
     )
 
-    context_obs = {
-        "left": context_obs_side,
-        "wrist": context_obs_wrist,
-    }
-
     context_frame = {
-        "left": context_frame_side,
+        "side": context_frame_side,
         "wrist": context_frame_wrist,
     }
 
@@ -440,24 +420,24 @@ def cem(
 
     mean = torch.zeros(
         (rollout, 7),
-        device=context_frame["left"].device,
+        device=context_frame["side"].device,
     )
 
     std = torch.cat(
         [
             torch.ones(
                 (rollout, 3),
-                device=context_frame["left"].device,
+                device=context_frame["side"].device,
             )
             * maxnorm,
             torch.ones(
                 (rollout, 3),
-                device=context_frame["left"].device,
+                device=context_frame["side"].device,
             )
             * maxrotnorm,
             torch.ones(
                 (rollout, 1),
-                device=context_frame["left"].device,
+                device=context_frame["side"].device,
             ) # * maxgrippernorm,
         ],
         dim=-1,
