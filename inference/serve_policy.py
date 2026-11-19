@@ -11,6 +11,7 @@ import socket
 import pickle
 import traceback
 from pathlib import Path
+from time import perf_counter
 
 import argparse
 
@@ -236,12 +237,16 @@ class DUETDINOPolicy:
         self.step_count: dict[int, int] = {}
         self.logname = cfgs_log_args.get("modelname")
 
+        self.output_dir = Path(cfgs_log_args.get("output_dir", "output")).expanduser()
+        self.output_dir = REPO_ROOT / self.output_dir / self.logname
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        self.log_inference_times = bool(cfgs_log_args.get("log_inference_times", False))
         self.log_predictions =  bool(cfgs_log_args.get("log_predictions", False))
         if self.log_predictions:
-            self.output_dir = Path(cfgs_log_args.get("output_dir", "output")).expanduser()
-            self.output_dir = REPO_ROOT / self.output_dir / self.logname
-            self.output_dir.mkdir(parents=True, exist_ok=True)
             self._prediction_log: dict[int, list[dict]] = {}
+        if self.log_inference_times:
+            self._inference_times: dict[int, list[float]] = {}
 
     def _save_predictions(self, env_id: int = 0) -> None:
         import torch
@@ -260,8 +265,17 @@ class DUETDINOPolicy:
 
     # Call at the end of each run to clear state and save predictions.
     def reset(self, env_id: int = 0) -> None:
+        import numpy as np
+
         if self.log_predictions and env_id in self._prediction_log:
             self._save_predictions(env_id)
+        if self.log_inference_times and env_id in self._inference_times:
+            run_idx = self._env_run_idx[env_id]
+            np.save(self.output_dir / f"inference_times_run{run_idx}_env{env_id}.npy",
+                    np.asarray(self._inference_times[env_id], 
+                    dtype=np.float64)
+                    )
+            self._inference_times.pop(env_id, None)
         self._env_prev_action.pop(env_id, None)
         self._env_goal_rep.pop(env_id, None)
         self._env_goal_rep_wrist.pop(env_id, None)
@@ -297,6 +311,8 @@ class DUETDINOPolicy:
 
         if env_id not in self.step_count:
             self.step_count[env_id] = 0
+        if self.log_inference_times and env_id not in self._inference_times:
+            self._inference_times[env_id] = []
         if self.log_predictions and env_id not in self._prediction_log:
             self._prediction_log[env_id] = []
 
@@ -325,6 +341,10 @@ class DUETDINOPolicy:
             # print("EE Pose:", pose[0].cpu().numpy(), flush=True)
             # print(f"[DUET-DINO server] action step={self.step_count[env_id]}", flush=True)
 
+            if self.log_inference_times:
+                if pose.is_cuda:
+                    torch.cuda.synchronize(pose.device)
+                start_time = perf_counter()
             actions = self.world_model.infer_next_action(
                 pose=pose,
                 obs=curr_obs["external_image"],
@@ -335,6 +355,10 @@ class DUETDINOPolicy:
                 goal_rep_wrist=self._env_goal_rep_wrist[env_id],
                 return_predictions=self.log_predictions,
             )
+            if self.log_inference_times:
+                if pose.is_cuda:
+                    torch.cuda.synchronize(pose.device)
+                self._inference_times[env_id].append(perf_counter() - start_time)
 
             if self.log_predictions:
                 actions, predictions = actions
