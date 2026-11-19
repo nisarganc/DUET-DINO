@@ -89,12 +89,14 @@ class DUETDINOPolicy:
         cfgs_mpc_args = self.cfg.get("mpc_args", {})
         cfgs_log_args = self.cfg.get("log", {})
         cfgs_exp_args = self.cfg.get("exp", {})
+        cfgs_optimization = self.cfg.get("optimization", {})
         self.base_seed = int(cfgs_exp_args.get("seed", 0))
         self.history = cfgs_mpc_args.get("history", 0)
         if not 0 <= self.history <= 7:
             raise ValueError("mpc_args.history must be an integer between 0 and 7")
 
         self.device = self.cfg.get("device", "cuda:0")
+        self.autocast_dtype = getattr(torch, cfgs_optimization.get("precision", "bfloat16"))
 
         camera_views = cfgs_data.get("camera_views", ["right_mp4_path"])
         crop_size = cfgs_data.get("crop_size", 256)
@@ -209,6 +211,20 @@ class DUETDINOPolicy:
             predictor_models[inferred_mode] = predictor
 
         encoder.to(self.device).eval()
+        compile_args = {
+            "backend": "inductor",
+            "mode": cfgs_optimization.get("mode", "reduce-overhead"),
+            "dynamic": cfgs_optimization.get("dynamic", False),
+        }
+        if use_dinov3_encoder:
+            # encode() calls this method, not the encoder's forward().
+            encoder.forward_features = torch.compile(encoder.forward_features, **compile_args)
+        else:
+            encoder = torch.compile(encoder, **compile_args)
+        predictor_models = {
+            name: torch.compile(model, **compile_args)
+            for name, model in predictor_models.items()
+        }
         tokens_per_frame = int((crop_size // patch_size) ** 2)
 
         self.world_model = WorldModel(
@@ -302,8 +318,12 @@ class DUETDINOPolicy:
     ):
         import torch
 
-        goal_rep = self.world_model.encode(external_image)
-        goal_rep_wrist = self.world_model.encode(wrist_image)
+        with torch.inference_mode(), torch.autocast(
+            device_type=torch.device(self.device).type,
+            dtype=self.autocast_dtype,
+        ):
+            goal_rep = self.world_model.encode(external_image)
+            goal_rep_wrist = self.world_model.encode(wrist_image)
 
         self._env_goal_rep[env_id] = goal_rep
         self._env_goal_rep_wrist[env_id] = goal_rep_wrist
@@ -343,7 +363,10 @@ class DUETDINOPolicy:
                 "Provide task goal images from the eval side before calling infer()."
             )
 
-        with torch.no_grad():
+        with torch.inference_mode(), torch.autocast(
+            device_type=torch.device(self.device).type,
+            dtype=self.autocast_dtype,
+        ):
             pose = torch.from_numpy(curr_obs["ee_pose"]).unsqueeze(0).to(
                 self.device, dtype=torch.float32, non_blocking=True
             )

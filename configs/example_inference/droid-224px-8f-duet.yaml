@@ -1,5 +1,11 @@
 device: cuda:0
 
+# PyTorch Inductor; BF16 matches training precision.
+optimization:
+  mode: reduce-overhead
+  dynamic: false
+  precision: bfloat16
+
 # data
 data:
   fps: 4
