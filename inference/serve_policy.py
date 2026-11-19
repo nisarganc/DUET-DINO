@@ -10,6 +10,7 @@ import struct
 import socket
 import pickle
 import traceback
+from collections import deque
 from pathlib import Path
 from time import perf_counter
 
@@ -89,6 +90,9 @@ class DUETDINOPolicy:
         cfgs_log_args = self.cfg.get("log", {})
         cfgs_exp_args = self.cfg.get("exp", {})
         self.base_seed = int(cfgs_exp_args.get("seed", 0))
+        self.history = cfgs_mpc_args.get("history", 0)
+        if not 0 <= self.history <= 7:
+            raise ValueError("mpc_args.history must be an integer between 0 and 7")
 
         self.device = self.cfg.get("device", "cuda:0")
 
@@ -247,6 +251,8 @@ class DUETDINOPolicy:
             self._prediction_log: dict[int, list[dict]] = {}
         if self.log_inference_times:
             self._inference_times: dict[int, list[float]] = {}
+        if self.history > 0:
+            self._env_history: dict[int, deque] = {}
 
     def _save_predictions(self, env_id: int = 0) -> None:
         import torch
@@ -276,6 +282,8 @@ class DUETDINOPolicy:
                     dtype=np.float64)
                     )
             self._inference_times.pop(env_id, None)
+        if self.history > 0:
+            self._env_history.pop(env_id, None)
         self._env_prev_action.pop(env_id, None)
         self._env_goal_rep.pop(env_id, None)
         self._env_goal_rep_wrist.pop(env_id, None)
@@ -315,6 +323,8 @@ class DUETDINOPolicy:
             self._inference_times[env_id] = []
         if self.log_predictions and env_id not in self._prediction_log:
             self._prediction_log[env_id] = []
+        if self.history > 0 and env_id not in self._env_history:
+            self._env_history[env_id] = deque(maxlen=self.history)
 
     def infer(self, obs: dict, instruction: str, *, env_id: int = 0) -> dict:
         import torch
@@ -354,6 +364,7 @@ class DUETDINOPolicy:
                 goal_rep=self._env_goal_rep[env_id],
                 goal_rep_wrist=self._env_goal_rep_wrist[env_id],
                 return_predictions=self.log_predictions,
+                history=self._env_history.get(env_id) if self.history > 0 else None
             )
             if self.log_inference_times:
                 if pose.is_cuda:

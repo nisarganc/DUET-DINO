@@ -47,6 +47,7 @@ model:
 
 # mpc_args
 mpc_args:
+  history: 0 # Number of past real observation/action/pose tuples to retain (0–7).
   rollout_horizon: 1
   samples: 800
   topk: 50
@@ -66,5 +67,6 @@ exp:
 
 log:
   modelname: duet_dino
-  log_predictions: false 
-  output_dir: output 
+  log_predictions: false
+  log_inference_times: false
+  output_dir: output

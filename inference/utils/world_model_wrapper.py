@@ -120,6 +120,7 @@ class WorldModel(object):
                           goal_rep=None,
                           goal_rep_wrist=None,
                           return_predictions=False,
+                          history=None,
                           ):
 
         # Request-specific goals keep interleaved environments independent.
@@ -127,7 +128,31 @@ class WorldModel(object):
         goal_rep = self.goal_rep if goal_rep is None else goal_rep
         goal_rep_wrist = self.goal_rep_wrist if goal_rep_wrist is None else goal_rep_wrist
 
-        def step_predictor(reps, actions, poses):
+        dual_view = self.inferred_mode in ("independent_dual", "duet")
+        past_frames = None
+        if history:
+            past_frames = {
+                view: torch.stack([entry[view] for entry in history], dim=1)
+                for view in ("side", "wrist")
+            }
+            past_actions = torch.stack([entry["action"] for entry in history], dim=1)
+            past_poses = torch.stack([entry["pose"] for entry in history], dim=1)
+
+        def step_predictor(reps, actions, poses, *, use_history=True):
+
+            if use_history and past_frames is not None:
+                batch = actions.size(0)
+                if dual_view:
+                    reps = {
+                        view: torch.cat([past_frames[view].expand(batch, -1, -1, -1), frames], dim=1)
+                        for view, frames in reps.items()
+                    }
+                else:
+                    reps = torch.cat([
+                        past_frames[self.inferred_mode].expand(batch, -1, -1, -1), reps
+                    ], dim=1)
+                actions = torch.cat([past_actions.expand(batch, -1, -1), actions], dim=1)
+                poses = torch.cat([past_poses.expand(batch, -1, -1), poses], dim=1)
 
             # new representation prediction from predictor
             with torch.no_grad():
@@ -229,10 +254,19 @@ class WorldModel(object):
                 **self.mpc_args,
             )
 
+        if history is not None:
+            # Retain real observations and measured poses, with only the chosen
+            # first command (in predictor Euler format), never imagined states.
+            history.append({
+                "side": rep.detach().clone(),
+                "wrist": wrist_rep.detach().clone(),
+                "pose": pose.detach().clone(),
+                "action": mpc_action[:1].detach().clone(),
+            })
+
         if not return_predictions:
             return mpc_action
 
-        dual_view = self.inferred_mode in ("independent_dual", "duet")
         frames = {
             "side": rep.unsqueeze(1),
             "wrist": wrist_rep.unsqueeze(1),
@@ -245,7 +279,7 @@ class WorldModel(object):
         with torch.no_grad():
             for h in range(mpc_action.size(0)):
                 next_frames, next_pose = step_predictor(
-                    frames, mpc_action[None, :h + 1], poses
+                    frames, mpc_action[None, :h + 1], poses, use_history=False
                 )
                 if dual_view:
                     for view in frames:
