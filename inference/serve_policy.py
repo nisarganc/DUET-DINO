@@ -322,6 +322,7 @@ class DUETDINOPolicy:
     # Call at the end of each run to clear state and save predictions.
     def reset(self, env_id: int = 0) -> None:
         import numpy as np
+     
 
         if self.log_predictions and env_id in self._prediction_log:
             self._save_predictions(env_id)
