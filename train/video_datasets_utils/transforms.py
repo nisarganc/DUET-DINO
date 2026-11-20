@@ -473,6 +473,9 @@ def _get_param_spatial_crop(scale, ratio, height, width, num_repeat=10, log_scal
     """
     Given scale, ratio, height and width, return sampled coordinates of the videos.
     """
+    # No sampled crop can fit, even after rounding its dimensions.
+    if scale[0] * height * width > (height + 0.5) * (width + 0.5):
+        num_repeat = 0
     for _ in range(num_repeat):
         area = height * width
         target_area = random.uniform(*scale) * area

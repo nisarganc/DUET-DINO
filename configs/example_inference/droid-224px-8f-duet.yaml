@@ -47,7 +47,7 @@ model:
   pred_num_heads: 16
   cross_attn_num_heads: 16
   uniform_power: true
-  use_activation_checkpointing: true
+  use_activation_checkpointing: false
   use_extrinsics: false
   use_rope: true
 

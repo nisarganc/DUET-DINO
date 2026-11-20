@@ -104,6 +104,39 @@ python -m train.main \
   --devices cuda:0 cuda:1 cuda:2 cuda:3
 ```
 
+`data.batch_size` and `data.num_workers` are per GPU. The command above uses a
+global batch of 256 with the default batch size of 64, and 32 data workers total.
+
+Training configs expose these throughput settings:
+
+```yaml
+meta:
+  log_freq: 50
+  timing_freq: 50
+model:
+  compile_model: true
+  optimize_ddp: true
+  use_activation_checkpointing: true
+optimization:
+  fused_adamw: true
+```
+
+The frozen DINO encoder compiles `forward_features()` and retains its existing
+training-mode RoPE augmentation. BF16 uses autocast without gradient scaling;
+FP16 still uses a gradient scaler. Predictor masks cover the configured clip
+length, and DDP wraps only the trainable predictor.
+
+Loss metrics still cover every step, with one GPU-to-CPU transfer per batch.
+CSV writes are buffered for `log_freq` steps and flushed at epoch boundaries and
+normal process exit. GPU timing is sampled every `timing_freq` steps and on the
+last step; other CSV rows use `-1` for GPU time. Existing optimizer checkpoints
+can resume with the configured fused implementation.
+
+Keep activation checkpointing enabled initially. If memory permits, benchmark
+`model.use_activation_checkpointing: false` to avoid recomputation during
+backward. Tune workers and prefetching against data-wait time and host memory;
+increasing them multiplies their resource use across GPUs.
+
 ## Acknowledgments
 
 Our code builds on [V-JEPA 2 / V-JEPA 2.1](https://github.com/facebookresearch/vjepa2)

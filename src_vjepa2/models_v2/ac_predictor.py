@@ -118,7 +118,7 @@ class VisionTransformerPredictorAC(nn.Module):
             attn_mask = build_action_block_causal_attention_mask(
                 grid_depth, grid_height, grid_width, add_tokens=3 if use_extrinsics else 2
             )
-        self.attn_mask = attn_mask
+        self.register_buffer("attn_mask", attn_mask, persistent=False)
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
@@ -157,7 +157,11 @@ class VisionTransformerPredictorAC(nn.Module):
             x = torch.cat([a, s, x], dim=2).flatten(1, 2)  # [B, T*(H*W+2), D]
 
         cond_tokens = 3 if self.use_extrinsics else 2
-        attn_mask = self.attn_mask[: x.size(1), : x.size(1)].to(x.device, non_blocking=True)
+        # One frame has no future tokens to mask; None also allows Flash Attention.
+        attn_mask = (
+            self.attn_mask[: x.size(1), : x.size(1)]
+            if self.attn_mask is not None and T > 1 else None
+        )
 
         # Fwd prop
         for i, blk in enumerate(self.predictor_blocks):

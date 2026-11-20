@@ -84,22 +84,9 @@ def compute_new_pose(pose, action):
     # -- compute delta theta
     thetas = pose[:, 3:6]
     delta_thetas = action[:, 3:6]
-    matrices = [
-        Rotation.from_euler("xyz", theta, degrees=False).as_matrix()
-        for theta in thetas
-    ]
-    delta_matrices = [
-        Rotation.from_euler("xyz", theta, degrees=False).as_matrix()
-        for theta in delta_thetas
-    ]
-    angle_diff = [
-        delta_matrices[t] @ matrices[t] for t in range(len(matrices))
-    ]
-    angle_diff = [
-        Rotation.from_matrix(mat).as_euler("xyz", degrees=False)
-        for mat in angle_diff
-    ]
-    new_angle = np.stack([d for d in angle_diff], axis=0)  # [B, 7]
+    rotation = Rotation.from_euler("xyz", thetas, degrees=False)
+    delta_rotation = Rotation.from_euler("xyz", delta_thetas, degrees=False)
+    new_angle = (delta_rotation * rotation).as_euler("xyz", degrees=False)
     # -- compute delta gripper
     new_closedness = pose[:, -1:] + action[:, -1:]
     new_closedness = np.clip(new_closedness, 0, 1)
@@ -332,24 +319,17 @@ def cem(
     # Expand MPC inputs over candidate samples.
     # ---------------------------------------------------------
 
-    context_frame = context_frame.repeat(
+    context_frame = context_frame.expand(
         samples,
-        1,
-        1,
-        1,
+        -1,
+        -1,
+        -1,
     )
 
-    goal_frame = goal_frame.repeat(
+    context_pose = context_pose.expand(
         samples,
-        1,
-        1,
-        1,
-    )
-
-    context_pose = context_pose.repeat(
-        samples,
-        1,
-        1,
+        -1,
+        -1,
     )
 
     # ---------------------------------------------------------

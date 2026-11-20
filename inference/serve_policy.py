@@ -127,7 +127,6 @@ class DUETDINOPolicy:
         use_extrinsics = cfgs_model.get("use_extrinsics", False)
         dual_view_training = bool(cfgs_model.get("dual_view_training", False))
         use_dinov3_encoder = bool(cfgs_model.get("use_dinov3_encoder", False))
-        use_activation_checkpointing = cfgs_model.get("use_activation_checkpointing", False)
         use_sdpa = bool(cfgs_meta.get("use_sdpa", False))
         cross_attention = bool(cfgs_model.get("cross_attention", True))
 
@@ -154,6 +153,7 @@ class DUETDINOPolicy:
             device=self.device,
             patch_size=patch_size,
             max_num_frames=512,
+            predictor_num_frames=(self.history + cfgs_mpc_args.get("rollout_horizon", 2)) * tubelet_size,
             tubelet_size=tubelet_size,
             model_name=model_name,
             crop_size=crop_size,
@@ -168,7 +168,7 @@ class DUETDINOPolicy:
             use_pred_silu=use_pred_silu,
             wide_silu=wide_silu,
             use_rope=use_rope,
-            use_activation_checkpointing=use_activation_checkpointing,
+            use_activation_checkpointing=False,
             dual_view_predictor=dual_view_training,
             cross_attn_num_heads=cross_attn_num_heads,
             use_dinov3_encoder=use_dinov3_encoder,
@@ -211,6 +211,7 @@ class DUETDINOPolicy:
             predictor_models[inferred_mode] = predictor
 
         encoder.to(self.device).eval()
+        encoder.use_activation_checkpointing = False
         compile_args = {
             "backend": "inductor",
             "mode": cfgs_optimization.get("mode", "reduce-overhead"),
@@ -269,6 +270,39 @@ class DUETDINOPolicy:
             self._inference_times: dict[int, list[float]] = {}
         if self.history > 0:
             self._env_history: dict[int, deque] = {}
+        self._warmup(crop_size)
+
+    def _warmup(self, crop_size: int) -> None:
+        import random
+        import numpy as np
+        import torch
+
+        print("[DUET-DINO server] Warming up encoder and planner before accepting clients...", flush=True)
+        start = perf_counter()
+        random_state = random.getstate()
+        numpy_state = np.random.get_state()
+        image = torch.zeros(crop_size, crop_size, 3, dtype=torch.uint8)
+        history = deque(maxlen=self.history) if self.history else None
+        generator = torch.Generator(device=self.device).manual_seed(self.base_seed)
+        try:
+            with torch.random.fork_rng(devices=[]), torch.inference_mode(), torch.autocast(
+                device_type=torch.device(self.device).type, dtype=self.autocast_dtype,
+            ):
+                pose = torch.zeros(1, 7, device=self.device)
+                goal = self.world_model.encode(image)
+                for _ in range(self.history + 3):
+                    self.world_model.infer_next_action(
+                        pose=pose, obs=image, obs_wrist=image,
+                        goal_rep=goal, goal_rep_wrist=goal.clone(),
+                        generator=generator, history=history,
+                        return_predictions=self.log_predictions,
+                    )
+                if torch.device(self.device).type == "cuda":
+                    torch.cuda.synchronize(self.device)
+        finally:
+            random.setstate(random_state)
+            np.random.set_state(numpy_state)
+        print(f"[DUET-DINO server] Warmup finished in {perf_counter() - start:.1f}s", flush=True)
 
     def _save_predictions(self, env_id: int = 0) -> None:
         import torch
@@ -426,7 +460,7 @@ class DUETDINOPolicy:
             server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             server_sock.bind((self.host, self.port))
             server_sock.listen(1)
-            print(f"[DUET-DINO server] Listening on {self.host}:{self.port}")
+            print(f"[DUET-DINO server] Listening on {self.host}:{self.port}", flush=True)
 
             while True:
                 conn, addr = server_sock.accept()

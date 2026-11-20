@@ -92,9 +92,12 @@ def load_checkpoint(
 
     # -- loading optimizer
     if opt is not None:
+        # Keep the requested optimizer implementation when resuming older runs.
+        for saved_group, group in zip(pred_checkpoint["opt"]["param_groups"], opt.param_groups):
+            saved_group.update(fused=group["fused"], foreach=group["foreach"])
         opt.load_state_dict(pred_checkpoint["opt"])
 
-    if scaler is not None:
+    if scaler is not None and pred_checkpoint.get("scaler") is not None:
         scaler.load_state_dict(pred_checkpoint["scaler"])
 
     logger.info(f"loaded optimizers from epoch {predictor_epoch}")
@@ -135,6 +138,7 @@ def init_video_model(
     cross_attention=True,
     cross_attn_num_heads=None,
     use_dinov3_encoder=False,
+    predictor_num_frames=None,
 ):
     import src_vjepa2.models_v2.ac_predictor as vit_ac_pred
     
@@ -182,7 +186,7 @@ def init_video_model(
     predictor_kwargs = dict(
         img_size=crop_size,
         patch_size=patch_size,
-        num_frames=max_num_frames,
+        num_frames=max_num_frames if predictor_num_frames is None else predictor_num_frames,
         tubelet_size=tubelet_size,
         embed_dim=encoder.embed_dim,
         predictor_embed_dim=pred_embed_dim,
@@ -244,6 +248,7 @@ def init_opt(
     eps=1e-8,
     zero_init_bias_wd=True,
     enc_lr_scale=1.0,
+    fused=False,
 ):
     param_groups = [
         {
@@ -266,7 +271,7 @@ def init_opt(
         },
     ]
 
-    optimizer = torch.optim.AdamW(param_groups, betas=betas, eps=eps)
+    optimizer = torch.optim.AdamW(param_groups, betas=betas, eps=eps, fused=fused)
     scheduler = WSDSchedule(
         optimizer,
         warmup_steps=int(warmup * iterations_per_epoch),

@@ -34,12 +34,10 @@ from train.data_loader import init_data
 from train.transforms import make_transforms
 from train.utils import init_opt, init_video_model, load_checkpoint, load_pretrained
 from train.train_utils.distributed import init_distributed
-from train.train_utils.logging import AverageMeter, CSVLogger, get_logger, gpu_timer
+from train.train_utils.logging import AverageMeter, CSVLogger, get_logger, gpu_timer, loss_metrics_to_cpu
 import wandb
 
 # --
-log_timings = True
-log_freq = 50
 CHECKPOINT_FREQ = 1
 GARBAGE_COLLECT_ITR_FREQ = 50
 # --
@@ -73,6 +71,8 @@ def main(args, resume_preempt=False):
     skip_batches = cfgs_meta.get("skip_batches", -1)
     use_sdpa = cfgs_meta.get("use_sdpa", False)
     sync_gc = cfgs_meta.get("sync_gc", False)
+    log_freq = cfgs_meta.get("log_freq", 50)
+    timing_freq = cfgs_meta.get("timing_freq", log_freq)
     which_dtype = cfgs_meta.get("dtype")
     logger.info(f"{which_dtype=}")
     if which_dtype.lower() == "bfloat16":
@@ -231,7 +231,7 @@ def main(args, resume_preempt=False):
     if use_closs:
         for key in closs_keys:
             csv_columns.append(("%.5f", f"closs_{key}"))
-    csv_logger = CSVLogger(log_file, *csv_columns, mode="+a")
+    csv_logger = CSVLogger(log_file, *csv_columns, mode="+a", flush_every=log_freq)
     
     # -- init model
     target_encoder, predictor = init_video_model(
@@ -239,6 +239,7 @@ def main(args, resume_preempt=False):
         device=device,
         patch_size=patch_size,
         max_num_frames=512,
+        predictor_num_frames=max_num_frames * tubelet_size,
         tubelet_size=tubelet_size,
         model_name=model_name,
         crop_size=crop_size,
@@ -260,11 +261,7 @@ def main(args, resume_preempt=False):
         use_dinov3_encoder=use_dinov3_encoder,
     )
 
-    if compile_model:
-        logger.info("Compiling target_encoder, and predictor.")
-        torch._dynamo.config.optimize_ddp = False
-        target_encoder.compile()
-        predictor.compile()
+    target_encoder.requires_grad_(False)
 
     video_collator = torch.utils.data.default_collate
     transform = make_transforms(
@@ -324,19 +321,29 @@ def main(args, resume_preempt=False):
         anneal=anneal,
         warmup=warmup,
         num_epochs=num_epochs,
-        mixed_precision=mixed_precision,
+        mixed_precision=dtype == torch.float16,
+        fused=cfgs_opt.get("fused_adamw", True) and device.type == "cuda",
         betas=betas,
         eps=eps,
     )
     # new changes for single GPU run
     use_distributed = dist.is_available() and dist.is_initialized() and world_size > 1
     if use_distributed:
-        predictor = DistributedDataParallel(predictor, static_graph=False, find_unused_parameters=True)
-        target_encoder = DistributedDataParallel(target_encoder)
+        predictor = DistributedDataParallel(
+            predictor, static_graph=False, find_unused_parameters=True,
+            gradient_as_bucket_view=True,
+        )
     else:
         logger.info("Distributed process group unavailable; running without DDP wrappers.")
-    for p in target_encoder.parameters():
-        p.requires_grad = False
+
+    if compile_model:
+        logger.info("Compiling target encoder and predictor.")
+        torch._dynamo.config.optimize_ddp = cfgs_model.get("optimize_ddp", True)
+        if use_dinov3_encoder:
+            target_encoder.forward_features = torch.compile(target_encoder.forward_features)
+        else:
+            target_encoder.compile()
+        predictor.compile()
 
     # -- looad pretrained weights
     target_encoder = load_pretrained(
@@ -742,19 +749,19 @@ def main(args, resume_preempt=False):
                 loss, jloss, sloss, closs, view_losses = compute_losses(clips, actions, states, extrinsics)
 
                 # Step 2. Backward & step
-                if mixed_precision:
+                if scaler is not None:
                     scaler.scale(loss).backward()
                     scaler.unscale_(optimizer)
                 else:
                     loss.backward()
-                if mixed_precision:
+                if scaler is not None:
                     scaler.step(optimizer)
                     scaler.update()
                 else:
                     optimizer.step()
                 optimizer.zero_grad()
 
-                return (float(loss), float(jloss), float(sloss), closs, view_losses, _new_lr, _new_wd)
+                return (*loss_metrics_to_cpu(loss, jloss, sloss, closs, view_losses), _new_lr, _new_wd)
 
             (
                 loss,
@@ -764,7 +771,9 @@ def main(args, resume_preempt=False):
                 view_losses,
                 _new_lr,
                 _new_wd,
-            ), gpu_etime_ms = gpu_timer(train_step)
+            ), gpu_etime_ms = gpu_timer(
+                train_step, log_timings=(itr % timing_freq == 0 or itr == ipe - 1),
+            )
             iter_elapsed_time_ms = (time.time() - itr_start_time) * 1000.0
             loss_meter.update(loss)
             jloss_meter.update(jloss)
@@ -775,12 +784,13 @@ def main(args, resume_preempt=False):
                 for key, val in view_losses.items():
                     view_loss_meters[key].update(float(val))
             iter_time_meter.update(iter_elapsed_time_ms)
-            gpu_time_meter.update(gpu_etime_ms)
+            if gpu_etime_ms >= 0:
+                gpu_time_meter.update(gpu_etime_ms)
             data_elapsed_time_meter.update(data_elapsed_time_ms)
 
             # -- Logging
             def log_stats():
-                csv_logger.log(epoch + 1, itr, loss, iter_elapsed_time_ms, gpu_etime_ms, data_elapsed_time_ms)
+                csv_logger.log(epoch + 1, itr, loss, iter_elapsed_time_ms, gpu_etime_ms, data_elapsed_time_ms, *closs.values())
  
                 if wandb_run is not None and (
                     (itr % log_freq == 0) or (itr == ipe - 1) or np.isnan(loss) or np.isinf(loss)
@@ -857,6 +867,7 @@ def main(args, resume_preempt=False):
             assert not np.isnan(loss), "loss is nan"
 
         # -- Save Checkpoint
+        csv_logger.flush()
         logger.info("avg. loss %.3f" % loss_meter.avg)
         # -- Save Last
         if epoch % CHECKPOINT_FREQ == 0 or epoch == (num_epochs - 1):
@@ -894,6 +905,9 @@ def main(args, resume_preempt=False):
                     clips, actions, states, extrinsics = load_clips(sample)
                     with torch.no_grad():
                         loss, jloss, sloss, closs, view_losses = compute_losses(clips, actions, states, extrinsics)
+                    loss, jloss, sloss, closs, view_losses = loss_metrics_to_cpu(
+                        loss, jloss, sloss, closs, view_losses,
+                    )
 
                     eval_loss_meter.update(float(loss))
                     eval_jloss_meter.update(float(jloss))

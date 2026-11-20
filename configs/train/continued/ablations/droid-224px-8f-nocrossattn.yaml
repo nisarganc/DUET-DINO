@@ -60,6 +60,8 @@ loss:
   # closs_gripper_clip: 1.0
 
 meta:
+  log_freq: 50
+  timing_freq: 50
   dtype: bfloat16
   eval_freq: 100
   resume_checkpoint: e300.pt 
@@ -72,6 +74,8 @@ meta:
 
 # MODEL
 model:
+  compile_model: true
+  optimize_ddp: true
   model_name: vit_giant_xformers
   use_dinov3_encoder: true
   dinov3_model_name: dinov3_vith16plus
@@ -88,6 +92,7 @@ model:
   camera_frame: false
   use_rope: true
 optimization:
+  fused_adamw: true
   anneal: 100
   epochs: 400
   final_lr: 0.0

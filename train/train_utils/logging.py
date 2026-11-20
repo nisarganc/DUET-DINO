@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import atexit
 import os
 import subprocess
 import sys
@@ -32,6 +33,17 @@ def gpu_timer(closure, log_timings=True):
     return result, elapsed_time
 
 
+def loss_metrics_to_cpu(loss, jloss, sloss, closs, view_losses):
+    """Copy all scalar loss metrics with one device-to-host transfer."""
+    values = torch.stack([loss, jloss, sloss, *closs.values(), *view_losses.values()])
+    values = values.detach().cpu().tolist()
+    return (
+        *values[:3],
+        dict(zip(closs, values[3:3 + len(closs)])),
+        dict(zip(view_losses, values[3 + len(closs):])),
+    )
+
+
 LOG_FORMAT = "[%(levelname)-8s][%(asctime)s][%(name)-20s][%(funcName)-25s] %(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -48,6 +60,9 @@ class CSVLogger(object):
         self.types = []
         mode = kwargs.get("mode", "+a")
         self.delim = kwargs.get("delim", ",")
+        self.flush_every = kwargs.get("flush_every", 1)
+        self.rows = []
+        atexit.register(self.flush)
         # -- print headers
         with open(self.fname, mode) as f:
             for i, v in enumerate(argv, 1):
@@ -58,10 +73,15 @@ class CSVLogger(object):
                     print(v[1], end="\n", file=f)
 
     def log(self, *argv):
-        with open(self.fname, "+a") as f:
-            for i, tv in enumerate(zip(self.types, argv), 1):
-                end = self.delim if i < len(argv) else "\n"
-                print(tv[0] % tv[1], end=end, file=f)
+        self.rows.append(self.delim.join(fmt % value for fmt, value in zip(self.types, argv)) + "\n")
+        if len(self.rows) >= self.flush_every:
+            self.flush()
+
+    def flush(self):
+        if self.rows:
+            with open(self.fname, "+a") as f:
+                f.writelines(self.rows)
+            self.rows.clear()
 
 
 class AverageMeter(object):

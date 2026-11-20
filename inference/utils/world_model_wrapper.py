@@ -129,16 +129,18 @@ class WorldModel(object):
         goal_rep_wrist = self.goal_rep_wrist if goal_rep_wrist is None else goal_rep_wrist
 
         dual_view = self.inferred_mode in ("independent_dual", "duet")
+        views = ("side", "wrist") if dual_view else (self.inferred_mode,)
         past_frames = None
         if history:
             past_frames = {
                 view: torch.stack([entry[view] for entry in history], dim=1)
-                for view in ("side", "wrist")
+                for view in views
             }
             past_actions = torch.stack([entry["action"] for entry in history], dim=1)
             past_poses = torch.stack([entry["pose"] for entry in history], dim=1)
 
         def step_predictor(reps, actions, poses, *, use_history=True):
+            predict_pose = actions.size(1) < self.mpc_args.get("rollout", 1)
 
             if use_history and past_frames is not None:
                 batch = actions.size(0)
@@ -222,16 +224,15 @@ class WorldModel(object):
                         next_rep = F.layer_norm(next_rep, (next_rep.size(-1),))
                     next_rep = next_rep.view(B, 1, N_T, D) # [25, 1, 256, 1408]
 
-            next_pose = compute_new_pose(poses[:, -1:], actions[:, -1:])
+            next_pose = compute_new_pose(poses[:, -1:], actions[:, -1:]) if predict_pose else poses[:, -1:]
             
             return next_rep, next_pose
 
-        if self.inferred_mode in ["independent_dual", "duet"]:
-            rep = self.encode(obs)
-            wrist_rep = self.encode(obs_wrist)
-            
+        images = {"side": obs, "wrist": obs_wrist}
+        current_frames = {view: self.encode(images[view]) for view in views}
+        if dual_view:
             mpc_action = cem_dual( 
-                context_frame={"side": rep,"wrist": wrist_rep},
+                context_frame=current_frames,
                 context_pose=pose,
                 goal_frame_side=goal_rep,
                 goal_frame_wrist=goal_rep_wrist,
@@ -242,10 +243,8 @@ class WorldModel(object):
             )
 
         else:
-            rep = self.encode(obs)
-            wrist_rep = self.encode(obs_wrist)
             mpc_action = cem_single( 
-                context_frame=rep if self.inferred_mode == "side" else wrist_rep,
+                context_frame=current_frames[self.inferred_mode],
                 context_pose=pose,
                 goal_frame=goal_rep if self.inferred_mode == "side" else goal_rep_wrist,
                 world_model=step_predictor,
@@ -258,8 +257,7 @@ class WorldModel(object):
             # Retain real observations and measured poses, with only the chosen
             # first command (in predictor Euler format), never imagined states.
             history.append({
-                "side": rep.detach().clone(),
-                "wrist": wrist_rep.detach().clone(),
+                **{view: frame.detach().clone() for view, frame in current_frames.items()},
                 "pose": pose.detach().clone(),
                 "action": mpc_action[:1].detach().clone(),
             })
@@ -268,10 +266,9 @@ class WorldModel(object):
             return mpc_action
 
         frames = {
-            "side": rep.unsqueeze(1),
-            "wrist": wrist_rep.unsqueeze(1),
+            view: frame.unsqueeze(1) for view, frame in current_frames.items()
         } if dual_view else (
-            rep if self.inferred_mode == "side" else wrist_rep
+            current_frames[self.inferred_mode]
         ).unsqueeze(1)
 
         poses = pose.unsqueeze(1)
