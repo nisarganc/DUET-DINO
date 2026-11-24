@@ -186,16 +186,18 @@ class WorldModel(object):
                     side_model = self.predictor['side']
                     wrist_model = self.predictor['wrist']
                     B, T, N_T, D = reps["side"].size()
+                    # Own the output before another compiled predictor call can
+                    # reuse CUDA graph storage. Keep cloning outside torch.compile.
                     side_next = side_model(
                         reps["side"].flatten(1, 2),
                         actions,
                         poses,
-                    )[:, -self.tokens_per_frame :]
+                    )[:, -self.tokens_per_frame :].clone()
                     wrist_next = wrist_model(
                         reps["wrist"].flatten(1, 2),
                         actions,
                         poses,
-                    )[:, -self.tokens_per_frame :]
+                    )[:, -self.tokens_per_frame :].clone()
 
                     if self.normalize_reps:
                         side_next = F.layer_norm(side_next, (side_next.size(-1),))

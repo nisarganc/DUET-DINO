@@ -71,6 +71,7 @@ class DUETDINOPolicy:
         self._env_goal_rep_wrist: dict[int, object] = {}
         self._env_generators: dict[int, object] = {}
         self._env_run_idx: dict[int, int] = {}
+        self._env_task_names: dict[int, str] = {}
 
         self._initialize_model()
 
@@ -304,13 +305,24 @@ class DUETDINOPolicy:
             np.random.set_state(numpy_state)
         print(f"[DUET-DINO server] Warmup finished in {perf_counter() - start:.1f}s", flush=True)
 
+    def _task_output_dir(self, env_id: int) -> Path:
+        import re
+
+        task_name = self._env_task_names.get(env_id) 
+        output_dir = self.output_dir / task_name
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return output_dir
+
     def _save_predictions(self, env_id: int = 0) -> None:
         import torch
         run_idx = self._env_run_idx[env_id]
-        path = self.output_dir / f"predictions_run{run_idx}_env{env_id}.pt"
+        path = self._task_output_dir(env_id) / f"predictions_run{run_idx}_env{env_id}.pt"
         pending_path = path.with_suffix(".pt.tmp")
         try:
             torch.save({
+                "task_name": self._env_task_names.get(env_id),
+                "run_idx": run_idx,
+                "env_id": env_id,
                 "predictions_log": self._prediction_log[env_id],
             }, pending_path)
             pending_path.replace(path)
@@ -328,7 +340,7 @@ class DUETDINOPolicy:
             self._save_predictions(env_id)
         if self.log_inference_times and env_id in self._inference_times:
             run_idx = self._env_run_idx[env_id]
-            np.save(self.output_dir / f"inference_times_run{run_idx}_env{env_id}.npy",
+            np.save(self._task_output_dir(env_id) / f"inference_times_run{run_idx}_env{env_id}.npy",
                     np.asarray(self._inference_times[env_id], 
                     dtype=np.float64)
                     )
@@ -340,6 +352,7 @@ class DUETDINOPolicy:
         self._env_goal_rep_wrist.pop(env_id, None)
         self._env_generators.pop(env_id, None)
         self._env_run_idx.pop(env_id, None)
+        self._env_task_names.pop(env_id, None)
         self.step_count.pop(env_id, None)
 
     def set_goal_images(
@@ -350,6 +363,7 @@ class DUETDINOPolicy:
         env_id: int = 0,
         instruction: str = "goal",
         run_idx: int | None = None,
+        task_name: str = "unknown_task",
     ):
         import torch
 
@@ -367,6 +381,7 @@ class DUETDINOPolicy:
         generator.manual_seed(self.base_seed + int(run_idx) * 1_000_003 + env_id)
         self._env_generators[env_id] = generator
         self._env_run_idx[env_id] = int(run_idx)
+        self._env_task_names[env_id] = task_name 
         self.world_model.reset_logs(
             goal_rep=goal_rep,
             goal_rep_wrist=goal_rep_wrist,
@@ -492,6 +507,7 @@ class DUETDINOPolicy:
                 env_id=int(request.get("env_id", 0)),
                 instruction=request.get("instruction", "goal"),
                 run_idx=request.get("run_idx"),
+                task_name=request.get("task_name"),
             )
             return {"ok": True}
 
