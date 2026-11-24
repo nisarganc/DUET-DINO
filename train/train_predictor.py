@@ -331,7 +331,7 @@ def main(args, resume_preempt=False):
     if use_distributed:
         predictor = DistributedDataParallel(
             predictor, static_graph=False, find_unused_parameters=True,
-            gradient_as_bucket_view=True,
+            gradient_as_bucket_view=True, broadcast_buffers=False,
         )
     else:
         logger.info("Distributed process group unavailable; running without DDP wrappers.")
