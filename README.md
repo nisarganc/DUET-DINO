@@ -87,7 +87,7 @@ wget https://huggingface.co/YOUR_ORG/DUET-DINO/resolve/main/duet-vjepa2.pt -O ch
 
 ## Development / training
 
-Edit [configs/train/droid-224px-8f.yaml](configs/train/droid-224px-8f.yaml) to set:
+Edit [configs/training/droid-224px-8f.yaml](configs/training/droid-224px-8f.yaml) to set:
 
 - `data.datasets`: Your prepared DROID and RoboArena LMDB directories.
 - `meta.pretrain_dinocheckpoint`: The downloaded DINOv3 encoder path.
@@ -100,7 +100,7 @@ Start training. The training launcher starts one worker per listed GPU:
 
 ```bash
 python -m train.main \
-  --fname configs/train/droid-224px-8f.yaml \
+  --fname configs/training/droid-224px-8f.yaml \
   --devices cuda:0 cuda:1 cuda:2 cuda:3
 ```
 

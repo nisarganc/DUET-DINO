@@ -1,7 +1,7 @@
 # train type
 train: predictor
 # output folder
-folder: /hnvme/workspace/v106be10-duet-dino/.cache/shared_latent_dinov3_droid_newcrattn/
+folder: .cache/duet_dino_nocrossattn/
 
 # DATA
 data:
@@ -10,10 +10,11 @@ data:
   camera_views:
   - right_mp4_path
   - wrist_mp4_path
-  include_roboarena: false
+  include_roboarena: true
   crop_size: 224
   datasets:
     - /tmp/droid_raw/clean_data_wright
+    - /tmp/roboarena/clean_data_wright
   dataset_fpcs: # max_num_frames
   - 8
   fps: 4
@@ -48,7 +49,7 @@ loss:
   closs_coeff: 0.2
   closs_chosen: 0.1
   # eval
-  closs_keys: 
+  closs_keys:
   - -1.0
   # - 0.0
   # - 0.1
@@ -64,9 +65,9 @@ meta:
   dtype: bfloat16
   eval_freq: 100
   # $folder/latest.pt
-  resume_checkpoint: null 
-  pretrain_checkpoint: /hnvme/workspace/v106be10-duet-dino/.cache/encoder_checkpoints/vitg.pt
-  pretrain_dinocheckpoint: /hnvme/workspace/v106be10-duet-dino/.cache/encoder_checkpoints/dinov3_vith16plus_pretrain_lvd1689m-7c1da9a5.pth
+  resume_checkpoint: null
+  pretrain_checkpoint: .cache/encoder_checkpoints/vitg.pt
+  pretrain_dinocheckpoint: .cache/encoder_checkpoints/dinov3_vith16plus_pretrain_lvd1689m-7c1da9a5.pth
   context_encoder_key: target_encoder
   save_every_freq: 25
   seed: 239
@@ -80,6 +81,7 @@ model:
   use_dinov3_encoder: true
   dinov3_model_name: dinov3_vith16plus
   dual_view_training: true # make sure to set 2 camera views
+  cross_attention: false
   pred_depth: 24
   pred_embed_dim: 1024
   pred_is_frame_causal: true
@@ -104,8 +106,8 @@ optimization:
 
 # LOGGING
 wandb:
-  project: vjepa
+  project: duet_dino
   entity: computer-science-and-artificial-intelligence
-  name: shared_latent_dinov3_droid_newcrattn
+  name: duet_dino_nocrossattn
   tags: dinov3_training
   enabled: true
