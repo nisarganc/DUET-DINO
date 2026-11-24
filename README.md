@@ -88,54 +88,21 @@ wget https://huggingface.co/YOUR_ORG/DUET-DINO/resolve/main/duet-vjepa2.pt -O ch
 ## Development / training
 
 Edit [configs/training/droid-224px-8f.yaml](configs/training/droid-224px-8f.yaml) to set:
-
+- `folder`: To your output directory.
 - `data.datasets`: Your prepared DROID and RoboArena LMDB directories.
+- `data.batch_size`: Your dataset batch size for each GPU (The paper uses a global batch of 256).
+- `data.num_workers`: Your num_workers per GPU
 - `meta.pretrain_dinocheckpoint`: The downloaded DINOv3 encoder path.
-- `folder`: To your output directory and adjust `data.batch_size` for your GPUs.
 - `wandb.entity`: Your wandb entity or set `wandb.enabled: false`.
 - `meta.resume_checkpoint: null`: Training resumes from `folder/latest.pt` if it exists. Otherwise, it starts fresh.
 
 
 Start training. The training launcher starts one worker per listed GPU:
-
 ```bash
 python -m train.main \
   --fname configs/training/droid-224px-8f.yaml \
   --devices cuda:0 cuda:1 cuda:2 cuda:3
 ```
-
-`data.batch_size` and `data.num_workers` are per GPU. The command above uses a
-global batch of 256 with the default batch size of 64, and 32 data workers total.
-
-Training configs expose these throughput settings:
-
-```yaml
-meta:
-  log_freq: 50
-  timing_freq: 50
-model:
-  compile_model: true
-  optimize_ddp: true
-  use_activation_checkpointing: true
-optimization:
-  fused_adamw: true
-```
-
-The frozen DINO encoder compiles `forward_features()` and retains its existing
-training-mode RoPE augmentation. BF16 uses autocast without gradient scaling;
-FP16 still uses a gradient scaler. Predictor masks cover the configured clip
-length, and DDP wraps only the trainable predictor.
-
-Loss metrics still cover every step, with one GPU-to-CPU transfer per batch.
-CSV writes are buffered for `log_freq` steps and flushed at epoch boundaries and
-normal process exit. GPU timing is sampled every `timing_freq` steps and on the
-last step; other CSV rows use `-1` for GPU time. Existing optimizer checkpoints
-can resume with the configured fused implementation.
-
-Keep activation checkpointing enabled initially. If memory permits, benchmark
-`model.use_activation_checkpointing: false` to avoid recomputation during
-backward. Tune workers and prefetching against data-wait time and host memory;
-increasing them multiplies their resource use across GPUs.
 
 ## Acknowledgments
 
