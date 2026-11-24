@@ -64,9 +64,9 @@ mpc_args:
   momentum_std: 0.75
   momentum_std_rot: 0.75
   momentum_std_gripper: 0.75
-  maxnorm: 0.04 # CHANGE: max xyz delta per step, also initial xyz std
-  maxrotnorm: 0.27 # CHANGE: max euler delta per step, also initial rot std
-  maxgrippernorm: 0.75 # CHANGE: max gripper delta per step, also initial gripper std
+  maxnorm: 0.05 # CHANGE: max xyz delta per step, also initial xyz std
+  maxrotnorm: 0.3 # CHANGE: max euler delta per step, also initial rot std
+  maxgrippernorm: 0.5 # CHANGE: max gripper delta per step, also initial gripper std
 
 exp:
   warm-starting: false
