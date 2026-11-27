@@ -4,5 +4,4 @@
 wandb/
 checkpoints/*
 output/*
-configs/inference/
 configs/train/
