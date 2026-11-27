@@ -75,6 +75,6 @@ exp:
 
 log:
   modelname: duet_vjepa
-  log_predictions: false
-  log_inference_times: false
+  log_predictions: true
+  log_inference_times: true
   output_dir: output

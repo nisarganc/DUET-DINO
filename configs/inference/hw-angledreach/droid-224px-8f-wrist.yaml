@@ -73,6 +73,6 @@ exp:
 
 log:
   modelname: wrist_dinov3
-  log_predictions: false
-  log_inference_times: false
+  log_predictions: true
+  log_inference_times: true
   output_dir: output
